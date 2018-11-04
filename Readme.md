@@ -49,3 +49,24 @@ If a container is run with the following environment variables
 | DEFAULT_DOMAIN | blank.test.com |
 
 Then the tool will find all the services running in the ``cluster`` namespace in the ``ap-southeast-2`` region and create a rule in the haproxy config to send traffic sent to hosts named ``<service_name>.test.com`` to the instances configured under that service.
+
+## AWS Permissions
+The following permissions are needed to allow this image to use the AWS Service Discovery API
+
+```
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ServiceDiscoveryStmt",
+      "Action": [
+        "servicediscovery:ListInstances",
+        "servicediscovery:ListNamespaces",
+        "servicediscovery:ListServices"
+      ],
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+```
