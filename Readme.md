@@ -40,6 +40,7 @@ docker run --name=<name> -d -p 80:80 \
 
 ## Example
 If a container is run with the following environment variables 
+
 |Variable|Value  |
 |--|--|
 | AWS_REGION | ap-southeast-2 |
