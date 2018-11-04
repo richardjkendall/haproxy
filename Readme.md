@@ -8,6 +8,8 @@ Exposes service on 80/tcp.
 Polls for changes every 10 seconds and reloads haproxy with signal SIGUSR2 each time a new config is detected.
 
 Currently only works for services with tasks that use the ``bridge`` networking mode.
+
+See this on docker hub here https://hub.docker.com/r/richardjkendall/haproxy/
 ## Building
 Clone the repository
 
