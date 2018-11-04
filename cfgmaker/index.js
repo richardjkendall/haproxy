@@ -41,7 +41,7 @@ var frontendVhostRuleConfig = `
 
 var defaultBackendConfig = `
 	backend default_location
-		redirect location http://null.richardjameskendall.com`;
+		redirect location http://%DEFAULTDOMAIN%`;
 
 var frontEndMainConfig = `
 frontend main 
@@ -49,20 +49,31 @@ frontend main
 	default_backend default_location
 `;
 
-var domainName = "richardjameskendall.com";
+var awsRegion = "";
+var defaultDomain = "";
+var requestedNamespaces = [];
+var namespaceIds = [];
+var domainName = "";
 var sleepTime = 10000;
 var prevConfig = "";
 
 async function refreshConfig() {
-	var sd = new AWS.ServiceDiscovery({region: "ap-southeast-2"});
+	var sd = new AWS.ServiceDiscovery({region: awsRegion});
 	var frontends = "";
 	var backends = "";
 	var overallConfig = boilerplateConfig;
 	overallConfig = overallConfig + frontEndMainConfig;
 
-	// get list services
+	// get list services, filtered by the namespaces we want to use
 	var params = {
-		MaxResults: 100
+		MaxResults: 100,
+		Filters: [
+			{
+				Name: "NAMESPACE_ID",
+				Values: namespaceIds,
+				Condition: "EQ"
+			}
+		]
 	};
 	
 	try {
@@ -73,37 +84,44 @@ async function refreshConfig() {
 		// loop through the services
 		for(var currentService = 0;currentService < servicesCount;currentService++) {
 			var service = services.Services[currentService];
+			
+			// need to get the instances for this service
 			var params = {
 				ServiceId: service.Id,
 				MaxResults: 100
 			};
 			try {
 				instances = await sd.listInstances(params).promise();
-				//console.log("got instances");
 				var instanceCount = instances.Instances.length;
+				
+				// check if we got to the end of the services and the instance count of this service is 0 so we can return the config
 				if (instanceCount == 0 && currentService == servicesCount - 1) {
 					overallConfig = overallConfig + frontends + backends + defaultBackendConfig;
 					return overallConfig;
 				}
-				//console.log("instance count", instanceCount);
+				
+				// make frontend config
 				var frontend = frontendVhostRuleConfig.replace(/%NAME%/g, service.Name);
 				frontend = frontend.replace(/%DOMAIN%/g, domainName);
+				
+				// make start of backend config
 				var backend = backendConfig.replace(/%NAME%/g, service.Name);
 				
+				// loop through each instance
 				for(var currentInstance = 0;currentInstance < instanceCount;currentInstance++) {
-					//console.log("instance #", currentInstance);
 					var instance = instances.Instances[currentInstance];
 					var ip = instance.Attributes.AWS_INSTANCE_IPV4;
 					var port = instance.Attributes.AWS_INSTANCE_PORT;
+					
+					// add backend config for this instance
 					backend = backend + "\n\t\tserver s" + currentInstance + " " + ip + ":" + port + " weight 1 check";
-					//console.log("current instance", currentInstance, "instance count -1", instanceCount -1);
+					
+					// if this is the last instance we should add the frontend and backend config
 					if(currentInstance == instanceCount - 1) {
-						//console.log("instance count match");
-						//overallConfig = overallConfig + frontend;
 						frontends = frontends + frontend;
-						//overallConfig = overallConfig + backend + "\n";
 						backends = backends + backend + "\n";
-						//console.log("current service", currentService, "service count -1", servicesCount -1);
+						
+						// if this is the last service then we should return the config
 						if(currentService == servicesCount - 1) {
 							overallConfig = overallConfig + frontends + backends + defaultBackendConfig;
 							return overallConfig;
@@ -111,33 +129,114 @@ async function refreshConfig() {
 					}
 				}
 			} catch (err) {
-				console.log(err, err.stack);
-				return err;
+				logger.error(err);
+				throw err;
 			}
 
 		}
 	} catch (err) {
-		console.log(err, err.stack);
-		return err;
+		logger.error(err);
+		throw err;
 	}
 }
 
 async function continuousRefresh() {
 	logger.info("Getting services from SD API...");
-	var config = await refreshConfig();
-	logger.info("Got service data");
-	if(config == prevConfig) {
-		logger.info("The config has not changed");
-	} else {
-		logger.info("The config has changed");
-		prevConfig = config;
-		console.log(config);
-		//fs.writeFileSync("/usr/local/etc/haproxy/haproxy.cfg", config);  // /usr/local/etc/haproxy/haproxy
-		logger.info("Wrote updated config to file");
-		logger.info("Sending SIGUSR2 signal to haproxy process");
-		exec("killall -12 haproxy-systemd-wrapper").unref();
+	try {
+		// get a fresh config copy
+		var config = await refreshConfig();
+		logger.info("Got service data");
+		
+		// check if the config has changed
+		if(config == prevConfig) {
+			logger.info("The config has not changed");
+		} else {
+			// config has changed
+			logger.info("The config has changed");
+			prevConfig = config;
+			//console.log(config);
+			fs.writeFileSync("/usr/local/etc/haproxy/haproxy.cfg", config);  // /usr/local/etc/haproxy/haproxy
+			logger.info("Wrote updated config to file");
+			logger.info("Sending SIGUSR2 signal to haproxy process");
+			exec("killall -12 haproxy-systemd-wrapper").unref();
+		}
+		setTimeout(continuousRefresh, sleepTime);
+	} catch (err) {
+		logger.error("Hit error while trying to get config");
 	}
-	setTimeout(continuousRefresh, sleepTime);
 }
 
-continuousRefresh();
+async function prepare() {
+	logger.info("Getting namespaces from SD API...");
+	
+	// call API to get the list of namespaces
+	var params = {
+		MaxResults: 100
+	};
+	var sd = new AWS.ServiceDiscovery({region: awsRegion});
+	try {
+		var namespaces = await sd.listNamespaces(params).promise();
+		
+		// loop through the namespaces to see if we have a match to the ones we want
+		for(var i = 0;i < namespaces.Namespaces.length;i++) {
+			var namespace = namespaces.Namespaces[i];
+			if(requestedNamespaces.includes(namespace.Name)) {
+				logger.info("Found namespace " + namespace.Name + " with ID: " + namespace.Id);
+				namespaceIds.push(namespace.Id);
+			}
+		}
+		logger.info("Namespaces found ", {"namespaceIds": namespaceIds});
+	} catch (err) {
+		logger.error(err);
+		throw err;
+	}
+}
+
+async function run() {
+	try {
+		// check if environment variables are present
+		
+		// AWS region
+		if("AWS_REGION" in process.env) {
+			awsRegion = process.env.AWS_REGION;
+		} else {
+			logger.error("Expecting AWS_REGION environment variable");
+			process.exit(1);
+		}
+		
+		// domain name
+		if("DOMAIN_NAME" in process.env) {
+			domainName = process.env.DOMAIN_NAME;
+		} else {
+			logger.error("Expecting DOMAIN_NAME environment variable");
+			process.exit(1);
+		}
+		
+		// namespaces
+		if("NAMESPACES" in process.env) {
+			requestedNamespaces = process.env.NAMESPACES.split(",");
+		} else {
+			logger.error("Expecting NAMESPACES environment variable");
+			process.exit(1);
+		}
+		
+		// default domain
+		if("DEFAULT_DOMAIN" in process.env) {
+			defaultDomain = process.env.DEFAULT_DOMAIN;
+			defaultBackendConfig = defaultBackendConfig.replace(/%DEFAULTDOMAIN%/g, defaultDomain);
+		} else {
+			logger.error("Expecting DEFAULT_DOMAIN environment variable");
+			process.exit(1);
+		}
+		
+		await prepare();
+		continuousRefresh();
+	} catch (err) {
+		logger.error(err);
+		logger.error("Exiting");
+		process.exit(1);
+	}
+}
+
+run();
+

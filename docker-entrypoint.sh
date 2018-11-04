@@ -14,9 +14,9 @@ if [ "$1" = 'haproxy' ]; then
 	set -- "$(which haproxy-systemd-wrapper)" -p /run/haproxy.pid -db "$@"
 fi
 
-# start the cfg maker script
-./cfgmaker/node_modules/forever/bin/forever /cfgmaker/index.js &
+# start the cfg maker script using forever 
+#./cfgmaker/node_modules/forever/bin/forever /cfgmaker/index.js &
+node /cfgmaker/index.js &
 sleep 10
 
-#echo "$@"
 exec "$@"
