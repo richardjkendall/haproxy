@@ -1,0 +1,6 @@
+language: node_js
+install:
+  - cd cfgmaker
+  - npm install
+script:
+  - docker build -r richardjkendall/haproxy .
