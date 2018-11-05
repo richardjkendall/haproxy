@@ -1,3 +1,5 @@
+![travis ci](https://api.travis-ci.org/richardjkendall/haproxy.svg?branch=master "build status")
+
 # haproxy + AWS Service Discovery
 This is a Docker image automatically configures haproxy using information retrieved from the AWS Service Discovery API.
 
