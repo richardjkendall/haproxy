@@ -3,4 +3,5 @@ install:
   - cd cfgmaker
   - npm install
 script:
+  - cd ../
   - docker build -t richardjkendall/haproxy .
