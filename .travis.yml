@@ -5,3 +5,5 @@ install:
 script:
   - cd ../
   - docker build -t richardjkendall/haproxy .
+  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+  - docker push richardjkendall/haproxy
