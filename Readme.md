@@ -3,11 +3,11 @@
 # haproxy + AWS Service Discovery
 This is a Docker image automatically configures haproxy using information retrieved from the AWS Service Discovery API.
 
-It is based on the ``haproxy:1.7`` base image.
+It is based on the ``haproxy:2.1.1`` base image.
 
 Exposes service on 80/tcp.
 
-Polls for changes every 10 seconds and reloads haproxy with signal SIGUSR2 each time a new config is detected.
+Polls for changes every 60 seconds and reloads haproxy with signal SIGUSR2 each time a new config is detected.  This refresh rate is configurable with the ``REFRESH_RATE`` environment variable.
 
 Currently only works for services with tasks that use the ``bridge`` networking mode.
 
@@ -26,8 +26,9 @@ Clone the repository
 ```
 docker run --name=<name> -d -p 80:80 \
        -e AWS_REGION=<aws_region> \
-       -e NAMESPACES=<comma separated list of namespaces> \
-       -e DOMAIN_NAME=<base domain name> \
+       -e APPLY_MODE=<'on' or 'off' defaults to 'on'> \
+       -e NAMESPACE_MAP=`cat jsonfile.json` \
+       -e REFRESH_RATE=<interval between refreshes in seconds> \
        -e DEFAULT_DOMAIN=<domain unknown hosts are directed to>
        richardjkendall/haproxy
 ```
@@ -36,8 +37,9 @@ docker run --name=<name> -d -p 80:80 \
 ```
 docker run --name=<name> -d -p 80:80 \
        -e AWS_REGION=<aws_region> \
-       -e NAMESPACES=<comma separated list of namespaces> \
-       -e DOMAIN_NAME=<base domain name> \
+       -e APPLY_MODE=<'on' or 'off' defaults to 'on'> \
+       -e NAMESPACE_MAP=`cat jsonfile.json` \
+       -e REFRESH_RATE=<internal between refreshes in seconds> \
        -e DEFAULT_DOMAIN=<domain unknown hosts are directed to>
        haproxy
 ```
@@ -48,16 +50,27 @@ If a container is run with the following environment variables
 |Variable|Value  |
 |--|--|
 | AWS_REGION | ap-southeast-2 |
-| NAMESPACES | cluster |
-| DOMAIN_NAME | test.com |
+| APPLY_MODE | on or off |
+| NAMESPACE_MAP | ```{...see below...}``` |
+| REFRESH_RATE | 30 |
 | DEFAULT_DOMAIN | blank.test.com |
 
-Then the tool will find all the services running in the ``cluster`` namespace in the ``ap-southeast-2`` region and create a rule in the haproxy config to send traffic sent to hosts named ``<service_name>.test.com`` to the instances configured under that service.
+Where the JSON in NAMESPACE_MAP is
+```json
+[
+  {
+    "namespace": "cluster",
+    "domainname": "test.com"
+  }
+]
+```
+
+Then the tool will find all the services running in the ``cluster`` namespace in the ``ap-southeast-2`` region and create a rule in the haproxy config to send traffic sent to hosts named ``<service_name>.test.com`` to the instances configured under that service.  This will refresh every ``30`` seconds.
 
 ## AWS Permissions
 The following permissions are needed to allow this image to use the AWS Service Discovery API
 
-```
+```json
 {
   "Version": "2012-10-17",
   "Statement": [

@@ -4,21 +4,21 @@ var exec = require("child_process").exec;
 var winston = require("winston");
 
 const logger = winston.createLogger({
-	level: 'info',
+	level: "info",
 	format: winston.format.json(),
 	transports: [new winston.transports.Console()]
 });
 
 var boilerplateConfig = `
 global
-	log 127.0.0.1 local0 notice
-	maxconn 2000
+	log stdout  format raw  local0  info
 
 defaults
 	log     global
 	mode    http
 	retries 3
 	option redispatch
+	option httplog
 	timeout connect  5000
 	timeout client  10000
 	timeout server  10000
@@ -53,9 +53,11 @@ var awsRegion = "";
 var defaultDomain = "";
 var requestedNamespaces = [];
 var namespaceIds = [];
-var domainName = "";
 var sleepTime = 10000;
 var prevConfig = "";
+var applyConfig = false;
+var namespaceMap = {};
+var revNamespaceMap = {};
 
 async function refreshConfig() {
 	var sd = new AWS.ServiceDiscovery({region: awsRegion});
@@ -65,79 +67,78 @@ async function refreshConfig() {
 	overallConfig = overallConfig + frontEndMainConfig;
 
 	// get list services, filtered by the namespaces we want to use
-	var params = {
-		MaxResults: 100,
-		Filters: [
-			{
-				Name: "NAMESPACE_ID",
-				Values: namespaceIds,
-				Condition: "EQ"
-			}
-		]
-	};
-	
-	try {
-		// get services from AWS service discovery
-		services = await sd.listServices(params).promise();
-		var servicesCount = services.Services.length;
-		
-		// loop through the services
-		for(var currentService = 0;currentService < servicesCount;currentService++) {
-			var service = services.Services[currentService];
-			
-			// need to get the instances for this service
-			var params = {
-				ServiceId: service.Id,
-				MaxResults: 100
-			};
-			try {
-				instances = await sd.listInstances(params).promise();
-				var instanceCount = instances.Instances.length;
-				
-				// check if we got to the end of the services and the instance count of this service is 0 so we can return the config
-				if (instanceCount == 0 && currentService == servicesCount - 1) {
-					overallConfig = overallConfig + frontends + backends + defaultBackendConfig;
-					return overallConfig;
+	// need to loop through the list of namespaces one by one so we can 
+	logger.info("Got " + namespaceIds.length + " namespaces to get services for");
+	for(var currentNamespace = 0;currentNamespace < namespaceIds.length;currentNamespace++) {
+		var currentNamespaceId = namespaceIds[currentNamespace];
+		logger.info("Getting services for namespace: " + currentNamespaceId);
+		var params = {
+			MaxResults: 100,
+			Filters: [
+				{
+					Name: "NAMESPACE_ID",
+					Values: [currentNamespaceId],
+					Condition: "EQ"
 				}
+			]
+		};
+		
+		try {
+			// get services from AWS service discovery
+			services = await sd.listServices(params).promise();
+			var servicesCount = services.Services.length;
+			
+			// loop through the services
+			for(var currentService = 0;currentService < servicesCount;currentService++) {
+				var service = services.Services[currentService];
 				
-				// make frontend config
-				var frontend = frontendVhostRuleConfig.replace(/%NAME%/g, service.Name);
-				frontend = frontend.replace(/%DOMAIN%/g, domainName);
-				
-				// make start of backend config
-				var backend = backendConfig.replace(/%NAME%/g, service.Name);
-				
-				// loop through each instance
-				for(var currentInstance = 0;currentInstance < instanceCount;currentInstance++) {
-					var instance = instances.Instances[currentInstance];
-					var ip = instance.Attributes.AWS_INSTANCE_IPV4;
-					var port = instance.Attributes.AWS_INSTANCE_PORT;
+				// need to get the instances for this service
+				var params = {
+					ServiceId: service.Id,
+					MaxResults: 100
+				};
+				try {
+					instances = await sd.listInstances(params).promise();
+					var instanceCount = instances.Instances.length;
 					
-					// add backend config for this instance
-					backend = backend + "\n\t\tserver s" + currentInstance + " " + ip + ":" + port + " weight 1 check";
+					// make frontend config
+					var frontend = frontendVhostRuleConfig.replace(/%NAME%/g, service.Name);
+					var domainName = revNamespaceMap[currentNamespaceId];
+					frontend = frontend.replace(/%DOMAIN%/g, domainName);
 					
-					// if this is the last instance we should add the frontend and backend config
-					if(currentInstance == instanceCount - 1) {
-						frontends = frontends + frontend;
-						backends = backends + backend + "\n";
+					// make start of backend config
+					var backend = backendConfig.replace(/%NAME%/g, service.Name);
+					
+					// loop through each instance
+					for(var currentInstance = 0;currentInstance < instanceCount;currentInstance++) {
+						var instance = instances.Instances[currentInstance];
+						var ip = instance.Attributes.AWS_INSTANCE_IPV4;
+						var port = instance.Attributes.AWS_INSTANCE_PORT;
 						
-						// if this is the last service then we should return the config
-						if(currentService == servicesCount - 1) {
-							overallConfig = overallConfig + frontends + backends + defaultBackendConfig;
-							return overallConfig;
+						// add backend config for this instance
+						backend = backend + "\n\t\tserver s" + currentInstance + " " + ip + ":" + port + " weight 1 check";
+						
+						// if this is the last instance we should add the frontend and backend config
+						if(currentInstance == instanceCount - 1) {
+							frontends = frontends + frontend;
+							backends = backends + backend + "\n";
 						}
 					}
+				} catch (err) {
+					logger.error(err);
+					throw err;
 				}
-			} catch (err) {
-				logger.error(err);
-				throw err;
-			}
 
+			}
+		} catch (err) {
+			logger.error(err);
+			throw err;
 		}
-	} catch (err) {
-		logger.error(err);
-		throw err;
 	}
+
+	// return the overall config
+	overallConfig = overallConfig + frontends + backends + defaultBackendConfig;
+	return overallConfig;
 }
 
 async function continuousRefresh() {
@@ -154,11 +155,15 @@ async function continuousRefresh() {
 			// config has changed
 			logger.info("The config has changed");
 			prevConfig = config;
-			//console.log(config);
-			fs.writeFileSync("/usr/local/etc/haproxy/haproxy.cfg", config);  // /usr/local/etc/haproxy/haproxy
-			logger.info("Wrote updated config to file");
-			logger.info("Sending SIGUSR2 signal to haproxy process");
-			exec("killall -12 haproxy-systemd-wrapper").unref();
+			if(!applyConfig) {
+				logger.info("Not in apply mode, printing config to console")
+				console.log(config);
+			} else {
+				fs.writeFileSync("/usr/local/etc/haproxy/haproxy.cfg", config);  // /usr/local/etc/haproxy/haproxy
+				logger.info("Wrote updated config to file");
+				logger.info("Sending SIGUSR2 signal to haproxy process");
+				exec("killall -12 haproxy").unref();
+			}
 		}
 		setTimeout(continuousRefresh, sleepTime);
 	} catch (err) {
@@ -183,10 +188,12 @@ async function prepare() {
 			if(requestedNamespaces.includes(namespace.Name)) {
 				logger.info("Found namespace " + namespace.Name + " with ID: " + namespace.Id);
 				namespaceIds.push(namespace.Id);
+				revNamespaceMap[namespace.Id] = namespaceMap.filter(n => n.namespace == namespace.Name)[0].domainname;
 			}
 		}
 		logger.info("Namespaces found ", {"namespaceIds": namespaceIds});
 	} catch (err) {
+		console.log(err);
 		logger.error(err);
 		throw err;
 	}
@@ -203,20 +210,29 @@ async function run() {
 			logger.error("Expecting AWS_REGION environment variable");
 			process.exit(1);
 		}
-		
-		// domain name
-		if("DOMAIN_NAME" in process.env) {
-			domainName = process.env.DOMAIN_NAME;
+
+		// mode (generate only, or update)
+		if("APPLY_MODE" in process.env) {
+			applyConfig = process.env.APPLY_MODE == "on" ? true : false;
 		} else {
-			logger.error("Expecting DOMAIN_NAME environment variable");
-			process.exit(1);
+			logger.warn("Expecting APPLY_MODE environment variable, setting default of on");
+			applyConfig = true;
 		}
-		
-		// namespaces
-		if("NAMESPACES" in process.env) {
-			requestedNamespaces = process.env.NAMESPACES.split(",");
+
+		// refresh rate
+		if("REFRESH_RATE" in process.env) {
+			sleepTime = parseInt(process.env.REFRESH_RATE, 10) * 1000;
 		} else {
-			logger.error("Expecting NAMESPACES environment variable");
+			logger.warn("Expecting APPLY_MODE environment variable, setting default of 60 seconds");
+			sleepTime = 60000;
+		}
+
+		// namespace map
+		if("NAMESPACE_MAP" in process.env) {
+			namespaceMap = JSON.parse(process.env.NAMESPACE_MAP);
+			requestedNamespaces = await namespaceMap.map((c) => {return c.namespace});
+		} else {
+			logger.error("Expecting NAMESPACE_MAP environment variable");
 			process.exit(1);
 		}
 		
@@ -232,6 +248,7 @@ async function run() {
 		await prepare();
 		continuousRefresh();
 	} catch (err) {
+		console.log(err);
 		logger.error(err);
 		logger.error("Exiting");
 		process.exit(1);
@@ -239,4 +256,3 @@ async function run() {
 }
 
 run();
-

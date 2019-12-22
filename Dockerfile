@@ -1,4 +1,4 @@
-FROM haproxy:1.7
+FROM haproxy:2.1.1
 
 # install psmisc
 RUN apt-get update
