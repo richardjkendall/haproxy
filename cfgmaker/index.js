@@ -11,14 +11,14 @@ const logger = winston.createLogger({
 
 var boilerplateConfig = `
 global
-	log 127.0.0.1 local0 notice
-	maxconn 2000
+	log stdout  format raw  local0  info
 
 defaults
 	log     global
 	mode    http
 	retries 3
 	option redispatch
+	option httplog
 	timeout connect  5000
 	timeout client  10000
 	timeout server  10000
@@ -162,7 +162,7 @@ async function continuousRefresh() {
 				fs.writeFileSync("/usr/local/etc/haproxy/haproxy.cfg", config);  // /usr/local/etc/haproxy/haproxy
 				logger.info("Wrote updated config to file");
 				logger.info("Sending SIGUSR2 signal to haproxy process");
-				exec("killall -12 haproxy-systemd-wrapper").unref();
+				exec("killall -12 haproxy").unref();
 			}
 		}
 		setTimeout(continuousRefresh, sleepTime);
@@ -193,6 +193,7 @@ async function prepare() {
 		}
 		logger.info("Namespaces found ", {"namespaceIds": namespaceIds});
 	} catch (err) {
+		console.log(err);
 		logger.error(err);
 		throw err;
 	}
@@ -247,6 +248,7 @@ async function run() {
 		await prepare();
 		continuousRefresh();
 	} catch (err) {
+		console.log(err);
 		logger.error(err);
 		logger.error("Exiting");
 		process.exit(1);
