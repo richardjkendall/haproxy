@@ -17,6 +17,6 @@ fi
 # start the cfg maker script using forever 
 #./cfgmaker/node_modules/forever/bin/forever /cfgmaker/index.js &
 node /cfgmaker/index.js &
-sleep 10
+sleep 20
 
 exec "$@"
