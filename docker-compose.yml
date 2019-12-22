@@ -1,0 +1,14 @@
+version: "2"
+services:
+  haproxy:
+    build:
+      # Build an image from the Dockerfile in the current directory
+      context: .
+    ports:
+      - 80:80
+    environment:
+      AWS_REGION: "ap-southeast-2"
+      APPLY_MODE: "on"
+      REFRESH_RATE: "30"
+      DEFAULT_DOMAIN: "null.richardjameskendall.com"
+      NAMESPACE_MAP: "[{\"namespace\": \"clusterservices\", \"domainname\": \"richardjameskendall.com\"}]"
