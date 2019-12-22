@@ -214,8 +214,16 @@ async function run() {
 		if("APPLY_MODE" in process.env) {
 			applyConfig = process.env.APPLY_MODE == "on" ? true : false;
 		} else {
-			logger.error("Expecting APPLY_MODE environment variable");
-			process.exit(1);
+			logger.warn("Expecting APPLY_MODE environment variable, setting default of on");
+			applyConfig = true;
+		}
+
+		// refresh rate
+		if("REFRESH_RATE" in process.env) {
+			sleepTime = parseInt(process.env.REFRESH_RATE, 10) * 1000;
+		} else {
+			logger.warn("Expecting APPLY_MODE environment variable, setting default of 60 seconds");
+			sleepTime = 60000;
 		}
 
 		// namespace map
