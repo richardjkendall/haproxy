@@ -101,13 +101,22 @@ async function refreshConfig() {
 					instances = await sd.listInstances(params).promise();
 					var instanceCount = instances.Instances.length;
 					
+					// need to check which naming convention has been used for the service
+					const regex = /_(\w+)\._tcp/m;
+					var serviceName = service.Name;
+					let m;
+					if ((m = regex.exec(serviceName)) !== null) {
+						logger.info("Service name matches regex, changing " + service.Name + " to " + m[1]);
+						serviceName = m[1];
+					}
+
 					// make frontend config
-					var frontend = frontendVhostRuleConfig.replace(/%NAME%/g, service.Name);
+					var frontend = frontendVhostRuleConfig.replace(/%NAME%/g, serviceName);
 					var domainName = revNamespaceMap[currentNamespaceId];
 					frontend = frontend.replace(/%DOMAIN%/g, domainName);
 					
 					// make start of backend config
-					var backend = backendConfig.replace(/%NAME%/g, service.Name);
+					var backend = backendConfig.replace(/%NAME%/g, serviceName);
 					
 					// loop through each instance
 					for(var currentInstance = 0;currentInstance < instanceCount;currentInstance++) {
