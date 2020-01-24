@@ -2,6 +2,10 @@ var AWS = require("aws-sdk");
 var fs = require("fs");
 var exec = require("child_process").exec;
 var winston = require("winston");
+var express = require("express");
+
+// express instance used for health check endpoint
+var app = express();
 
 const logger = winston.createLogger({
 	level: "info",
@@ -58,6 +62,7 @@ var prevConfig = "";
 var applyConfig = false;
 var namespaceMap = {};
 var revNamespaceMap = {};
+var numFailures = 0;
 
 async function refreshConfig() {
 	var sd = new AWS.ServiceDiscovery({region: awsRegion});
@@ -172,11 +177,15 @@ async function continuousRefresh() {
 				logger.info("Wrote updated config to file");
 				logger.info("Sending SIGUSR2 signal to haproxy process");
 				exec("killall -12 haproxy").unref();
+				numFailures = 0;
 			}
 		}
 		setTimeout(continuousRefresh, sleepTime);
 	} catch (err) {
 		logger.error("Hit error while trying to get config");
+		logger.error("Failure count", numFailures);
+		numFailures++;
+		setTimeout(continuousRefresh, sleepTime);
 	}
 }
 
@@ -263,5 +272,24 @@ async function run() {
 		process.exit(1);
 	}
 }
+
+// need to provide monitoring endpoint
+app.get("/", (req, res) => {
+	logger.info("Call for status");
+	if(numFailures > 2) {
+		logger.info("Returning 500 failure");
+		res.status(500).json({
+			numFailures: numFailures,
+			down: true
+		})
+	} else {
+		logger.info("Returning 200 okay");
+		res.status(200).json({
+			numFailures: numFailures,
+			down: false
+		});
+	}
+});
+app.listen(3000);
 
 run();

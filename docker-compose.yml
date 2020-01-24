@@ -11,4 +11,4 @@ services:
       APPLY_MODE: "on"
       REFRESH_RATE: "30"
       DEFAULT_DOMAIN: "null.richardjameskendall.com"
-      NAMESPACE_MAP: "[{\"namespace\": \"clusterservices\", \"domainname\": \"richardjameskendall.com\"}]"
+      NAMESPACE_MAP: "[{\"namespace\": \"public.apse2.local\", \"domainname\": \"richardjameskendall.com\"}]"
