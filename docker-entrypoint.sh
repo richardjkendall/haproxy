@@ -17,6 +17,13 @@ fi
 # start the cfg maker script using forever 
 #./cfgmaker/node_modules/forever/bin/forever /cfgmaker/index.js &
 node /cfgmaker/index.js &
-sleep 10
+
+# loop until config exists
+while ! [ -f /usr/local/etc/haproxy/haproxy.cfg ];
+do
+	echo "Waiting for config to be generated..."
+	sleep 2
+done;
+echo "Config present.  Starting haproxy..."
 
 exec "$@"
