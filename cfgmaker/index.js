@@ -17,14 +17,11 @@ defaults
 	log     global
 	mode    http
 	retries 3
-	option redispatch
-	option httplog
+	option  redispatch
+	option  httplog
 	timeout connect  5000
 	timeout client  10000
 	timeout server  10000
-	stats enable
-	stats uri     /myhaproxy?stats
-	stats auth stats_user:Q1w2e3r4t5y6!
 `;
 
 var backendConfig = `
@@ -44,9 +41,20 @@ var defaultBackendConfig = `
 		redirect location http://%DEFAULTDOMAIN%`;
 
 var frontEndMainConfig = `
+userlist metrics
+	user stats password $5$MDAv9NFRggCNbINy$NIJYkfMCrmpezX1mJUfgXJFKwezaGUwNLerSklO0sdB
+
 frontend main 
 	bind *:80
 	default_backend default_location
+
+	acl auth_okay http_auth(metrics)
+	http-request auth realm metrics if { path /metrics } !auth_okay
+	http-request use-service prometheus-exporter if { path /metrics } auth_okay
+  stats enable
+  stats uri /stats
+	stats refresh 10s
+	stats auth stats_user:Q1w2e3r4t5y6!
 `;
 
 var awsRegion = "";
