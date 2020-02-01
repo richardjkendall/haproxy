@@ -67,6 +67,20 @@ Where the JSON in NAMESPACE_MAP is
 
 Then the tool will find all the services running in the ``cluster`` namespace in the ``ap-southeast-2`` region and create a rule in the haproxy config to send traffic sent to hosts named ``<service_name>.test.com`` to the instances configured under that service.  This will refresh every ``30`` seconds.
 
+### Supported naming conventions
+The script which builds the haproxy config supports two naming conventions
+
+1. Plain: e.g. service.namespace.  In this model it would use 'service' as the service name.
+2. Extended: e.g. _service._tcp.namespace.  In this model it would use the characters between the first underscore and ._tcp (in this example: service) as the service name
+
+## Health checks
+The script exposes a server on port 3000 which can be polled to check the health of the container.  It will either return:
+
+200 okay: the container is up and the config has been created successfully
+500 server error: the container is up but there has been 3 or more failures to create the config
+
+This is built into the docker file HEALTHCHECK command, but this is ignored by ECS, so you'll need to include a healthcheck in the task definition.  https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html#container_definition_healthcheck
+
 ## AWS Permissions
 The following permissions are needed to allow this image to use the AWS Service Discovery API
 
