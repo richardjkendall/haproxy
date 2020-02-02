@@ -3,6 +3,8 @@ var fs = require("fs");
 var exec = require("child_process").exec;
 var winston = require("winston");
 var express = require("express");
+var sha512crypt = require("sha512crypt-node");
+var crypto = require("crypto");
 
 // express instance used for health check endpoint
 var app = express();
@@ -46,7 +48,7 @@ var defaultBackendConfig = `
 
 var frontEndMainConfig = `
 userlist metrics
-	user stats password $5$MDAv9NFRggCNbINy$NIJYkfMCrmpezX1mJUfgXJFKwezaGUwNLerSklO0sdB
+	user stats password %PROM_PASSWD%
 
 frontend main 
 	bind *:80
@@ -58,7 +60,7 @@ frontend main
   stats enable
   stats uri /stats
 	stats refresh 10s
-	stats auth stats_user:Q1w2e3r4t5y6!
+	stats auth stats_user:%STATS_PASSWD%
 `;
 
 var awsRegion = "";
@@ -71,13 +73,17 @@ var applyConfig = false;
 var namespaceMap = {};
 var revNamespaceMap = {};
 var numFailures = 0;
+var promPasswd = "";
+var statsPasswd = "";
 
 async function refreshConfig() {
 	var sd = new AWS.ServiceDiscovery({region: awsRegion});
 	var frontends = "";
 	var backends = "";
 	var overallConfig = boilerplateConfig;
-	overallConfig = overallConfig + frontEndMainConfig;
+	var frontendMain = frontEndMainConfig.replace(/%PROM_PASSWD%/g, promPasswd);
+	frontendMain = frontendMain.replace(/%STATS_PASSWD%/, statsPasswd);
+	overallConfig = overallConfig + frontendMain;
 
 	// get list services, filtered by the namespaces we want to use
 	// need to loop through the list of namespaces one by one so we can 
@@ -225,6 +231,11 @@ async function prepare() {
 	}
 }
 
+function hashPassword(p) {
+	let salt = crypto.randomBytes(10).toString("base64");
+	return sha512crypt.sha512crypt(p, salt);
+}
+
 async function run() {
 	try {
 		// check if environment variables are present
@@ -268,6 +279,23 @@ async function run() {
 			defaultBackendConfig = defaultBackendConfig.replace(/%DEFAULTDOMAIN%/g, defaultDomain);
 		} else {
 			logger.error("Expecting DEFAULT_DOMAIN environment variable");
+			process.exit(1);
+		}
+
+		// prometheus metrics endpoint password
+		if("PROM_PASSWD" in process.env) {
+			promPasswd = hashPassword(process.env.PROM_PASSWD);
+			logger.info("Hashed input password for Prometheus metrics endpoint");
+		} else {
+			logger.error("Expecting PROM_PASSWD environment variable");
+			process.exit(1);
+		}
+
+		// stats page endpoint password
+		if("STATS_PASSWD" in process.env) {
+			statsPasswd = process.env.STATS_PASSWD;
+		} else {
+			logger.error("Expecting STATS_PASSWD environment variable");
 			process.exit(1);
 		}
 		
