@@ -54,6 +54,8 @@ If a container is run with the following environment variables
 | NAMESPACE_MAP | ```{...see below...}``` |
 | REFRESH_RATE | 30 |
 | DEFAULT_DOMAIN | blank.test.com |
+| PROM_PASSWD | blah123 |
+| STATS_PASSWD | abcdef |
 
 Where the JSON in NAMESPACE_MAP is
 ```json
@@ -66,6 +68,19 @@ Where the JSON in NAMESPACE_MAP is
 ```
 
 Then the tool will find all the services running in the ``cluster`` namespace in the ``ap-southeast-2`` region and create a rule in the haproxy config to send traffic sent to hosts named ``<service_name>.test.com`` to the instances configured under that service.  This will refresh every ``30`` seconds.
+
+The %_PASSWD variables set the following passwords:
+
+* PROM_PASSWD: sets the password for the Prometheus metrics endpoint.  Username is hardcoded to 'stats'
+* STATS_PASSWD: sets the password for the HAproxy stats page.  Username is hardcoded to 'stats_user'
+
+### Prometheus Metrics
+
+To access the metrics endpoint, hit any endpoint that haproxy is hosting /metrics e.g. www.example.com/metrics and log in with the username 'stats' and the password set in PROM_PASSWD.
+
+### HAproxy stats page
+
+To access the stats page, hit any endpoint the haproxy is hosting /stats e.g. www.example.com/stats and log in with the username 'stats_user' and the password set in STATS_PASSWD.
 
 ### Supported naming conventions
 The script which builds the haproxy config supports two naming conventions
