@@ -25,9 +25,9 @@ defaults
 	retries 3
 	option  redispatch
 	option  httplog
-	timeout connect  5000
-	timeout client  10000
-	timeout server  10000
+	timeout connect 10000
+	timeout client  20000
+	timeout server  20000
 `;
 
 var backendConfig = `
