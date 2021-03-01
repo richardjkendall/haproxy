@@ -37,9 +37,17 @@ var backendConfig = `
 		option httpclose
 		option forwardfor`;
 
+var pathBasedBackendConfig = `
+		http-request set-path "%[path,regsub(^/%NAME%/,/)]"`;
+
 var frontendVhostRuleConfig = `
 	acl %NAME%_host hdr_dom(host) -i %NAME%.%DOMAIN%
 	use_backend %NAME%_backend if %NAME%_host
+`;
+
+var frontendPathRuleConfig = `
+	acl %NAME%_path path_beg /%NAME%
+	use_backend %NAME%_backend if %NAME%_path
 `;
 
 var defaultBackendConfig = `
@@ -72,6 +80,7 @@ var prevConfig = "";
 var applyConfig = false;
 var namespaceMap = {};
 var revNamespaceMap = {};
+var configModeMap = {};
 var numFailures = 0;
 var promPasswd = "";
 var statsPasswd = "";
@@ -130,12 +139,24 @@ async function refreshConfig() {
 					}
 
 					// make frontend config
-					var frontend = frontendVhostRuleConfig.replace(/%NAME%/g, serviceName);
-					var domainName = revNamespaceMap[currentNamespaceId];
-					frontend = frontend.replace(/%DOMAIN%/g, domainName);
-					
+					var frontend = "";
+					if(configModeMap[currentNamespaceId] == "host") {
+						// use Vhost rule for 'host' config mode
+						frontend = frontendVhostRuleConfig.replace(/%NAME%/g, serviceName);
+						var domainName = revNamespaceMap[currentNamespaceId];
+						frontend = frontend.replace(/%DOMAIN%/g, domainName);
+					} else {
+						// use Path rule for 'path' config mode
+						frontend = frontendPathRuleConfig.replace(/%NAME%/g, serviceName);
+					}
+
 					// make start of backend config
 					var backend = backendConfig.replace(/%NAME%/g, serviceName);
+
+					// if path based we need to add config to strip the path prefix from the URL being sent to the backend
+					if(configModeMap[currentNamespaceId] == "path") {
+						backend = backend + pathBasedBackendConfig.replace(/%NAME%/g, serviceName);
+					}
 					
 					// loop through each instance
 					for(var currentInstance = 0;currentInstance < instanceCount;currentInstance++) {
@@ -175,6 +196,7 @@ async function continuousRefresh() {
 		// get a fresh config copy
 		var config = await refreshConfig();
 		logger.info("Got service data");
+		console.log(config);
 		
 		// check if the config has changed
 		if(config == prevConfig) {
@@ -221,6 +243,16 @@ async function prepare() {
 				logger.info("Found namespace " + namespace.Name + " with ID: " + namespace.Id);
 				namespaceIds.push(namespace.Id);
 				revNamespaceMap[namespace.Id] = namespaceMap.filter(n => n.namespace == namespace.Name)[0].domainname;
+				// get config mode (if set)
+				var nc = namespaceMap.filter(n => n.namespace == namespace.Name)[0];
+				if (nc.hasOwnProperty("mode")) {
+					// mode is defined, so follow-it
+					configModeMap[namespace.Id] = nc.mode;
+					logger.info("Namespace has mode set: " + nc.mode);
+				} else {
+					// mode is not defined, so assume normal (host)
+					configModeMap[namespace.Id] = "host";
+				}
 			}
 		}
 		logger.info("Namespaces found ", {"namespaceIds": namespaceIds});
