@@ -63,11 +63,18 @@ Where the JSON in NAMESPACE_MAP is
   {
     "namespace": "cluster",
     "domainname": "test.com"
+    "mode": "host"
   }
 ]
 ```
 
 Then the tool will find all the services running in the ``cluster`` namespace in the ``ap-southeast-2`` region and create a rule in the haproxy config to send traffic sent to hosts named ``<service_name>.test.com`` to the instances configured under that service.  This will refresh every ``30`` seconds.
+
+#### Path based routing
+
+The `mode` option can be omitted, and when it is not present 'host' mode is assumed'.  Where it is present it can be set to 'host' or 'path'.  In path mode the routing rules will be set up to route based on paths for example test.com/<service_name>.
+
+Where path based routing is used, you cannot have services with names which conflict with 'stats' or 'metrics'.
 
 The %_PASSWD variables set the following passwords:
 
