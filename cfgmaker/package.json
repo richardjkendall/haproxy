@@ -4,7 +4,7 @@
   "description": "Creates haproxy config using AWS Service Discovery data",
   "main": "index.js",
   "dependencies": {
-    "aws-sdk": "^2.656.0",
+    "aws-sdk": "^2.814.0",
     "express": "^4.17.1",
     "forever": "^0.15.3",
     "sha512crypt-node": "^0.1.0",
